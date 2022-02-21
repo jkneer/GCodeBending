@@ -1,0 +1,12 @@
+{
+    "input": "tests/cylinder-vase.gcode",
+    "output": "tests/bent-cylinder-vase.gcode",
+
+    "layer_height": 0.3,
+    "warning_angle": 30.0,
+
+    "spline_x": [125, 95],
+    "spline_z": [0, 140],
+    "bending_angle": -0.52359877559,
+    "discretization_length": 0.01
+}

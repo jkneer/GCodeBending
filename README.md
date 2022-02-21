@@ -7,8 +7,6 @@
 # Usage
 - Place your part preferably in the middle of your print plate with known center X coordinates
 - Place the sliced GCode in the same directory as the Python script
-- Set *INPUT_FILE_NAME* to your GCode file name
-- Set *LAYER_HEIGHT* to your slicing layer height. Important, because you don't set it correctly you'll get under- or over extrusions
-- Set *WARNING_ANGLE* to the maximum angle your system can print at due to clearances
-- Define your spline with *SPLINE_X* and *SPLINE_Z*. This array can contain an arbitrary number of points. Make sure the first X-coordinate is in the center of your part. Make sure the last z coordinate is higher or equal the highest z-coordiante in your GCode.
-- *SPLINE = CubicSpline(SPLINE_Z, SPLINE_X, bc_type=((1, 0), (1, -np.pi/6)))* defines the spline. You can alter the last pair of of *bc_type* (here *1,-np.pi/6*). This defines the final angle of your spline in RAD.
+- Set the options either in config.json and run the script with *python bend_gcode.py --json-config=config.json*
+- Or, set the options that you require by command line: *python bend_gcode.py -i myinputfile.gcode ...*
+- Use *python bend_gcode.py --help* to learn about the available options.
