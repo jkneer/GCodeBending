@@ -18,14 +18,15 @@ GCodeLine = namedtuple('GCodeLine', 'x y z e f')
 
 #################   USER INPUT PARAMETERS   #########################
 
-INPUT_FILE_NAME = "pipe_mk2.gcode"
-OUTPUT_FILE_NAME = "BENT_" + INPUT_FILE_NAME 
+INPUT_FILE_NAME = "tests/cylinder-vase.gcode"
+#OUTPUT_FILE_NAME = "BENT_" + INPUT_FILE_NAME
+OUTPUT_FILE_NAME = "tests/bent-cylinder-vase.gcode"
 LAYER_HEIGHT = 0.3 #Layer height of the sliced gcode
 WARNING_ANGLE = 30 #Maximum Angle printable with your setup
  
 #2-point spline
-SPLINE_X = [125, 95]
-SPLINE_Z = [0, 140]
+SPLINE_X = (125, 95)
+SPLINE_Z = (0, 140)
 
 #4-point spline example
 #SPLINE_X = [150, 156,144,150]
@@ -55,17 +56,17 @@ plt.gca().set_aspect('equal', adjustable='box')
 plt.show()
 
 
-def getNormalPoint(currentPoint: Point2D, derivative: float, distance: float) -> Point2D: #claculates the normal of a point on the spline
+def get_normalpoint(currentPoint: Point2D, derivative: float, distance: float) -> Point2D: #claculates the normal of a point on the spline
     angle = np.arctan(derivative) + math.pi /2
     return Point2D(currentPoint.x + distance * np.cos(angle), currentPoint.y + distance * np.sin(angle))
 
-def parseGCode(currentLine: str) -> GCodeLine: #parse a G-Code line
+def parse_gcode(currentLine: str) -> GCodeLine: #parse a G-Code line
     thisLine = re.compile('(?i)^[gG][0-3](?:\s+x(?P<x>-?[0-9.]{1,15})|\s+y(?P<y>-?[0-9.]{1,15})|\s+z(?P<z>-?[0-9.]{1,15})|\s+e(?P<e>-?[0-9.]{1,15})|\s+f(?P<f>-?[0-9.]{1,15}))*')
     lineEntries = thisLine.match(currentLine)
     if lineEntries:
         return GCodeLine(lineEntries.group('x'), lineEntries.group('y'), lineEntries.group('z'), lineEntries.group('e'), lineEntries.group('f'))
 
-def writeLine(G, X, Y, Z, F = None, E = None): #write a line to the output file
+def write_line(G, X, Y, Z, F = None, E = None): #write a line to the output file
     outputSting = "G" + str(int(G)) + " X" + str(round(X,5)) + " Y" + str(round(Y,5)) + " Z" + str(round(Z,3))
     if E is not None:
         outputSting = outputSting + " E" + str(round(float(E),5))
@@ -86,18 +87,36 @@ def onSplineLength(Zheight) -> float: #calculates a new z height if the spline i
     return currentHeight
 """
 
-def onSplineLength(Zheight) -> float: #calculates a new z height if the spline is followed
-    for i in range(len(SplineLookupTable)):
-        height = SplineLookupTable[i]
-        if height >= Zheight:
-            return i * DISCRETIZATION_LENGTH
-    print("Error! Spline not defined high enough!")
+# def onSplineLength(Zheight) -> float: #calculates a new z height if the spline is followed
+#     for i in range(len(SplineLookupTable)):
+#         height = SplineLookupTable[i]
+#         if height >= Zheight:
+#             return i * DISCRETIZATION_LENGTH
+#     print("Error! Spline not defined high enough!")
 
-def createSplineLookupTable():
-    heightSteps = np.arange(DISCRETIZATION_LENGTH, SPLINE_Z[-1], DISCRETIZATION_LENGTH)
-    for i in range(len(heightSteps)):
-        height = heightSteps[i]
-        SplineLookupTable.append(SplineLookupTable[i] + np.sqrt((SPLINE(height)-SPLINE(height-DISCRETIZATION_LENGTH))**2 + DISCRETIZATION_LENGTH**2))
+# about ~x30 faster than original
+def on_spline_length(z:float, x_lookup: np.ndarray, disc_length: float) -> float:
+    """"""
+    res = np.where(x_lookup>=z)
+    try:
+        index = res[0][0]
+    except IndexError:
+        raise IndexError('Spline not defined high enough')
+    return index*disc_length
+
+def create_x_lookuptable(X: tuple, Z: tuple, disc_length: float) -> np.ndarray:
+    height = np.arange(Z[0], Z[-1], disc_length)
+    dx_spline = CubicSpline(Z, X, bc_type=((1, 0), (1, -np.pi/6)))
+    dx = dx_spline(height)
+    tx = np.cumsum( np.sqrt((dx[1:]-dx[:-1])**2 + disc_length**2) )
+    x = np.insert(tx, 0, 0.0)
+    return x
+
+# def createSplineLookupTable():
+#     heightSteps = np.arange(DISCRETIZATION_LENGTH, SPLINE_Z[-1], DISCRETIZATION_LENGTH)
+#     for i in range(len(heightSteps)):
+#         height = heightSteps[i]
+#         SplineLookupTable.append(SplineLookupTable[i] + np.sqrt((SPLINE(height)-SPLINE(height-DISCRETIZATION_LENGTH))**2 + DISCRETIZATION_LENGTH**2))
     
 
 
@@ -106,7 +125,8 @@ currentZ = 0.0
 lastZ = 0.0
 currentLayer = 0
 relativeMode = False
-createSplineLookupTable()
+#createSplineLookupTable()
+SplineLookupTable = create_x_lookuptable(SPLINE_X, SPLINE_Z, DISCRETIZATION_LENGTH)
 
 with open(INPUT_FILE_NAME, "r") as gcodeFile, open(OUTPUT_FILE_NAME, "w+") as outputFile:
         for currentLine in gcodeFile:
@@ -124,7 +144,7 @@ with open(INPUT_FILE_NAME, "r") as gcodeFile, open(OUTPUT_FILE_NAME, "w+") as ou
             if relativeMode: #if in relative mode don't do anything
                 outputFile.write(currentLine)
                 continue
-            currentLineCommands = parseGCode(currentLine)
+            currentLineCommands = parse_gcode(currentLine)
             if currentLineCommands is not None: #if current comannd is a valid gcode
                 if currentLineCommands.z is not None: #if there is a z height in the command
                     currentZ = float(currentLineCommands.z)
@@ -145,7 +165,8 @@ with open(INPUT_FILE_NAME, "r") as gcodeFile, open(OUTPUT_FILE_NAME, "w+") as ou
                 distToSpline = midpointX - SPLINE_X[0]
                 
                 #Correct the z-height if the spline gets followed
-                correctedZHeight = onSplineLength(currentZ)
+                #correctedZHeight = onSplineLength(currentZ)
+                correctedZHeight = on_spline_length(currentZ, SplineLookupTable, DISCRETIZATION_LENGTH)
                                 
                 angleSplineThisLayer = np.arctan(SPLINE(correctedZHeight, 1)) #inclination angle this layer
                 
@@ -153,7 +174,7 @@ with open(INPUT_FILE_NAME, "r") as gcodeFile, open(OUTPUT_FILE_NAME, "w+") as ou
                 
                 heightDifference = np.sin(angleSplineThisLayer - angleLastLayer) * distToSpline * -1 # layer height difference
                 
-                transformedGCode = getNormalPoint(Point2D(correctedZHeight, SPLINE(correctedZHeight)), SPLINE(correctedZHeight, 1), currentPosition.x - SPLINE_X[0])
+                transformedGCode = get_normalpoint(Point2D(correctedZHeight, SPLINE(correctedZHeight)), SPLINE(correctedZHeight, 1), currentPosition.x - SPLINE_X[0])
                 
                 #Check if a move is below Z = 0
                 if float(transformedGCode.x) <= 0.0: 
@@ -179,7 +200,7 @@ with open(INPUT_FILE_NAME, "r") as gcodeFile, open(OUTPUT_FILE_NAME, "w+") as ou
                     #outputFile.write(";was" + currentLineCommands.e + " is" + str(extrusionAmount) + " diff" + str(int(((LAYER_HEIGHT + heightDifference)/LAYER_HEIGHT)*100)) + "\n")
                 else:
                     extrusionAmount = None                    
-                writeLine(1,transformedGCode.y, currentPosition.y, transformedGCode.x, None, extrusionAmount)
+                write_line(1,transformedGCode.y, currentPosition.y, transformedGCode.x, None, extrusionAmount)
                 lastPosition = currentPosition
                 lastZ = currentZ
             else:
